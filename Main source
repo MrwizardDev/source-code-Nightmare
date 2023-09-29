@@ -1,0 +1,305 @@
+local TS = game:GetService("TweenService")
+local DSS = require(1936396537)
+local defaultTokens = 0
+local defaultXP = 0
+local defaultLevel = 0
+
+local mps = game:GetService("MarketplaceService")
+
+local function GS(service) return game:GetService(service) end
+local ServerStorage = GS("ServerStorage")
+local Bindables = ServerStorage.Bindables
+local elevator = workspace.Elevator
+local lDoor = elevator.LeftDoor
+local rDoor = elevator.RightDoor
+local ding = elevator.soundPart.ding
+local originalLeft = lDoor.Position
+local originalRight = rDoor.Position
+local doorSound = elevator.soundPart.close
+local stages = game.ServerStorage.Floors:GetChildren()
+local NPCs = game.ServerStorage.NPCs:GetChildren()
+local currentStages = workspace.Stages
+local ReplicatedStorage = GS("ReplicatedStorage")
+local SSS = GS("ServerScriptService")
+local colorCorrection = game.Lighting:FindFirstChild("ColorCorrection")
+local perkEvent = game.ReplicatedStorage:FindFirstChild("perkBuy")
+local perks = game.ReplicatedStorage.perks
+local activePerks = game.ReplicatedStorage.activePerks
+local perkFunctions = require(game.ServerScriptService.Perks)
+local point
+local invulnerable = game.ReplicatedStorage.invulnerable
+local timeLeft = game.ReplicatedStorage.time
+
+local winners = {}
+local PlayerData = {}
+
+function setupPlayer(plr)
+	local tokens = Instance.new("IntValue", plr)
+	tokens.Name = "Tokens"
+	local storedTokens = DSS("tokens", plr)
+	tokens.Value = getTokens(plr)
+
+	local level = Instance.new("IntValue", plr)
+	level.Name = "Level"
+	local storedLevel = DSS("Level", plr)
+	level.Value = getLevel(plr)
+	
+	local experience = Instance.new("IntValue", plr)
+	experience.Name = "XP"
+	local storedXP = DSS("XP", plr)
+	experience.Value = getXP(plr)
+	
+	storedLevel:OnUpdate(function()
+		level.Value = getLevel(plr)
+	end)
+	
+	storedXP:OnUpdate(function()
+		experience.Value = getXP(plr)
+	end)
+	
+	storedTokens:OnUpdate(function()
+		tokens.Value = getTokens(plr)
+	end)
+	local gears = Instance.new("Folder", plr)
+	gears.Name = "gear"
+	plr.CharacterAdded:Connect(function()
+		for i, v in pairs(gears:GetChildren()) do
+			v:Clone().Parent = plr.Backpack
+		end
+	end)
+
+	local expToLevelUp
+
+	local expForPreviousLevel = 0
+
+
+	while wait() do
+
+		local levelBar = plr.PlayerGui:WaitForChild("LevelBar")	
+
+		if level.Value < 1 then 
+
+			expToLevelUp = 100 
+
+		else
+
+			expToLevelUp = math.floor(level.Value ^ 1.3) * 200 + math.floor(level.Value ^ 4)
+		end
+
+
+		if experience.Value >= expToLevelUp then
+
+			level.Value = level.Value + 1	
+		end
+
+		expForPreviousLevel = math.floor((level.Value - 1) ^ 1.3) * 200 + math.floor((level.Value - 1) ^ 4)
+
+
+		local expDifference = expToLevelUp - expForPreviousLevel
+
+		local expDifference2 = experience.Value - expForPreviousLevel
+
+
+		levelBar.Bar:TweenSize(UDim2.new(levelBar.BarBackground.Size.X.Scale * (expDifference2 / expDifference), 0, levelBar.BarBackground.Size.Y.Scale, 0), Enum.EasingDirection.InOut, Enum.EasingStyle.Quint, 0.001)
+
+		levelBar.Experience.Text = expDifference2 .. "/" .. expDifference
+
+		levelBar.Level.Text = "Level: " .. level.Value
+		
+		--experience.Value = experience.Value + 1
+	end
+end
+
+function resetGears()
+	for i, plr in pairs(game.Players:GetChildren()) do
+		local gears = plr:FindFirstChild("gear")
+		gears:ClearAllChildren()
+		plr.Backpack:ClearAllChildren()
+		local char = plr.Character
+		if char then
+			for x, y in pairs(char:GetChildren()) do
+				if y:IsA("Tool") then
+					y.Parent = plr.Backpack
+					game:GetService("Debris"):AddItem(y, 0.1)
+				end
+			end
+		end
+	end
+end
+
+game.Players.PlayerAdded:Connect(setupPlayer)
+--game.Players.RespawnTime = 0
+function display(text)
+	game.ReplicatedStorage.display.Value = text
+end
+
+function serverMsg(text)
+	game.ReplicatedStorage.serverMsg:FireAllClients(text)
+end
+
+function clearStages()
+	currentStages:ClearAllChildren()
+	game.ReplicatedStorage.client:ClearAllChildren()
+end
+
+function clearNPC()
+	workspace.NPC:ClearAllChildren()
+end
+
+function timer(amount)
+	timeLeft.Value = amount
+end
+
+function getTokens(plr)
+	local store = DSS("tokens", plr)
+	return store:Get(defaultTokens)
+end
+
+function getLevel(plr)
+	local store = DSS("Level", plr)
+	return store:Get(defaultLevel)
+end
+
+function getXP(plr)
+	local store = DSS("XP", plr)
+	return store:Get(defaultXP)
+end
+
+function giveTokens(plr, amount)
+	local store = DSS("tokens", plr)
+	if amount > 0 and mps:UserOwnsGamePassAsync(plr.UserId, 18777919) then
+		amount*=2
+	end
+	store:Increment(amount)
+end
+
+function giveXP(plr, amount)
+	local store = DSS("XP", plr)
+	if amount > 0 and mps:UserOwnsGamePassAsync(plr.UserId, 18777926) then
+		amount*=2
+	end
+	store:Increment(amount)
+end
+function rewardWinners()
+	for i, v in pairs(game.Players:GetChildren()) do
+		giveTokens(v, 25)
+		giveXP(v, math.random(50,150))
+	end
+end
+
+function openDoors()
+	ding:Play()
+	doorSound:Play()
+	local tween = TS:Create(lDoor, TweenInfo.new(5, Enum.EasingStyle.Linear), {Position = Vector3.new(elevator.lPos.Position.X, lDoor.Position.Y, elevator.lPos.Position.Z)})
+	local tween2 = TS:Create(rDoor, TweenInfo.new(5, Enum.EasingStyle.Linear), {Position = Vector3.new(elevator.rPos.Position.X, rDoor.Position.Y, elevator.rPos.Position.Z)})
+	tween:Play()
+	tween2:Play()
+end
+
+function closeDoors()
+	elevator.soundPart.closing:Play()
+	wait(1)
+	doorSound:Play()
+	local tween = TS:Create(lDoor, TweenInfo.new(5, Enum.EasingStyle.Linear), {Position = originalLeft})
+	local tween2 = TS:Create(rDoor, TweenInfo.new(5, Enum.EasingStyle.Linear), {Position = originalRight})
+	tween:Play()
+	tween2:Play()
+end
+
+function bringPlayers()
+	local region = Region3.new(Vector3.new(-9, -0.5, -9), Vector3.new(9, 17.5, 9))
+	local parts = workspace:FindPartsInRegion3(region, nil, math.huge)
+	
+	for i, v in pairs(game.Players:GetChildren()) do
+		if v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+			if not table.find(parts, v.Character.HumanoidRootPart) then
+				v.Character.HumanoidRootPart.CFrame = CFrame.new(0,7,0)*CFrame.Angles(0,0,0)	
+			end
+		end
+	end
+end
+
+function darknessMode()
+	game.Lighting.OutdoorAmbient = Color3.fromRGB(0, 0, 0)
+	game.Lighting.Ambient = Color3.fromRGB(0, 0, 0)
+	game.Lighting.ColorCorrection.Contrast = 0.5
+	game.Lighting.ColorCorrection.Saturation = 0.5
+	game.Lighting.FogEnd = 150
+	game.Lighting.FogColor = Color3.fromRGB(0, 0, 0)
+	workspace.Sounds.Flicker.Playing = true
+	wait(1.071)
+	workspace.Sounds.Flicker.Playing = false
+end
+
+function resetPerks()
+	--game.Players.RespawnTime = 0
+	game.Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+	game.Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+	game.Lighting.FogEnd = 500
+	game.Lighting.ColorCorrection.Contrast = 0.1
+	game.Lighting.ColorCorrection.Saturation = 0.1
+	colorCorrection:Destroy()
+	colorCorrection = Instance.new("ColorCorrectionEffect", game.Lighting)
+	workspace.Gravity = 196.2
+	game.Players.RespawnTime = 5
+	invulnerable.Value = false
+	for i, v in pairs(activePerks:GetChildren()) do
+		v:Destroy()
+	end
+end
+
+function spawnStages()
+	for i = 1, 1 do
+		local stage = stages[math.random(1, #stages)]:Clone()
+		stage.Parent = currentStages
+		stage:SetPrimaryPartCFrame(point)
+		stage.PrimaryPart:Destroy()
+		--point = stage.End.CFrame
+	end
+end
+
+
+function spawnNPC()
+	local NPC = NPCs[math.random(1, #NPCs)]:Clone()
+	for key, value in pairs(workspace.Stages:GetDescendants()) do
+		if value.Name == "SpawnPart" then
+			NPC.Parent = workspace.NPC
+			NPC:MoveTo(value.Position)
+		end
+	end
+end
+
+function restart()
+	point = workspace.Start.CFrame
+	local amount = math.random(14)
+	serverMsg("Next Floor Loading")
+	spawnStages()
+	openDoors()
+	wait(6)
+	darknessMode()
+	spawnNPC()
+	wait(17)
+	closeDoors()
+	wait(6)
+	clearNPC()
+	resetPerks()
+	rewardWinners()
+	bringPlayers()
+	clearStages()
+	wait(4)
+end
+
+function processPerkPayment(plr, name)
+	if perks:FindFirstChild(name) and getTokens(plr) >= perks[name].Value and not activePerks:FindFirstChild(name) then
+		giveTokens(plr, -perks[name].Value)
+		perkFunctions[name]()
+
+		Instance.new("BoolValue", activePerks).Name = name
+	end
+end
+
+perkEvent.OnServerEvent:Connect(processPerkPayment)
+
+while true do
+	restart()
+end
